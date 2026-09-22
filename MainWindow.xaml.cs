@@ -1,5 +1,6 @@
 #region Imports
 using System.ComponentModel;
+using System.Data;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
@@ -26,6 +27,13 @@ public partial class MainWindow : Window
         WHERE [IsDeleted] = 0
         ORDER BY [ProjectName], [Project_ID];
         """;
+    private const string ProjectStartDateQuery = """
+        SELECT [Project_ID], [ProjectStartDate]
+        FROM [dbo].[Project]
+        WHERE [ProjectName] = @ProjectName AND [IsDeleted] = 0;
+        """;
+    private bool _schedulerActive;
+    private bool _updatingProjectDates;
     private readonly string _settingsPath;
     private readonly CancellationTokenSource _lifetime = new();
     private ApplicationConfiguration _configuration = new();
@@ -81,6 +89,8 @@ public partial class MainWindow : Window
         ConnectionStringInput.Text = _savedConnectionString ?? string.Empty;
         _initializing = false;
         UpdateScheduleDescription();
+        UpdateSchedulerState();
+        UpdateProjectDatesAvailability();
         ValidateDateRange();
         SettingsStatus.Text = startupWarning ?? "Ready.";
     }
@@ -99,11 +109,12 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_reducing) { e.Cancel = true; CancelReductionButton_Click(sender: this, e: new RoutedEventArgs()); return; }
         _closing = true;
         _calendarTimer.Stop();
         _calendarTimer.Tick -= CalendarTimer_Tick;
         _lifetime.Cancel();
-        if (!_testing)
+        if (!_testing && !_updatingProjectDates)
         {
             _lifetime.Dispose();
         }
@@ -148,6 +159,7 @@ public partial class MainWindow : Window
         ProjectSelector.IsEnabled = false;
         SelectProjectButton.IsEnabled = false;
         ProjectStatus.Text = "Test the database connection on the Database tab to load projects.";
+        UpdateProjectDatesAvailability();
     }
 
     private async void TestConnectionButton_Click(object sender, RoutedEventArgs e)
@@ -157,7 +169,7 @@ public partial class MainWindow : Window
 
     private async Task TestConnectionAsync()
     {
-        if (_testing || _closing) return;
+        if (_testing || _updatingProjectDates || _closing) return;
         _testing = true;
         InvalidateConnection();
         ConnectionStringInput.IsEnabled = false;
@@ -225,6 +237,7 @@ public partial class MainWindow : Window
             {
                 ConnectionStringInput.IsEnabled = true;
                 TestConnectionButton.IsEnabled = true;
+                UpdateProjectDatesAvailability();
             }
         }
     }
@@ -269,7 +282,7 @@ public partial class MainWindow : Window
     {
         if (_initializing || _loadingProjects || _validatedConnectionString is null) return;
         ActiveProject = ProjectSelector.SelectedItem as ProjectItem;
-        if (ActiveProject is null) return;
+        if (ActiveProject is null) { UpdateProjectDatesAvailability(); return; }
         if (TryGetProjectTimeZone(timeZoneId: ActiveProject.TimeZoneId, timeZone: out TimeZoneInfo? zone))
         {
             ProjectStatus.Text = $"Project-local time zone: {zone!.DisplayName}";
@@ -281,6 +294,7 @@ public partial class MainWindow : Window
             ProjectStatus.Text = "Project selected. Its time zone is missing or unrecognised; configure it in DLR Report before scheduling.";
             SetHistoricDatesUnavailable();
         }
+        UpdateProjectDatesAvailability();
         SavePreferences();
     }
 
@@ -297,6 +311,117 @@ public partial class MainWindow : Window
         {
             return false;
         }
+    }
+    #endregion
+
+    #region Scheduler Interface State and Reduction Test
+    private void StartButton_Click(object sender, RoutedEventArgs e)
+    {
+        _schedulerActive = true;
+        UpdateSchedulerState();
+    }
+
+    private void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        _schedulerActive = false;
+        UpdateSchedulerState();
+    }
+
+    private void UpdateSchedulerState()
+    {
+        StartButton.IsEnabled = !_schedulerActive && !_reducing;
+        StopButton.IsEnabled = _schedulerActive && !_reducing;
+        DeleteButton.IsEnabled = !_schedulerActive && !_reducing;
+        ManualComputeButton.IsEnabled = !_schedulerActive && !_reducing;
+        TestReductionButton.IsEnabled = !_schedulerActive && !_reducing;
+        SchedulerStatus.Text = _schedulerActive
+            ? "Reduction software active (interface state only). No reduction is scheduled."
+            : "Reduction software stopped. Next scheduled reduction: not scheduled.";
+        HistoricLockoutStatus.Text = _schedulerActive
+            ? "Delete and Compute are disabled while the reduction software is active. Click Stop on Scheduler to enable them."
+            : "Delete and Compute are disabled whenever the reduction software is active.";
+    }
+
+
+    #endregion
+
+    #region Project Start Date Lookup
+    private void UpdateProjectDatesAvailability()
+    {
+        UpdateProjectDatesButton.IsEnabled = !_reducing && !_testing && !_updatingProjectDates && !_closing
+            && _validatedConnectionString is not null && ActiveProject is not null && _projectTimeZone is not null;
+    }
+
+    private async void UpdateProjectDatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_testing || _updatingProjectDates || _closing || ActiveProject is not ProjectItem project
+            || _validatedConnectionString is not string connectionString || _projectTimeZone is null) return;
+        _updatingProjectDates = true;
+        UpdateProjectDatesAvailability();
+        ProjectDatesStatus.Text = "Reading the active project's start date...";
+        try
+        {
+            using SqlConnection connection = new(connectionString: connectionString);
+            await connection.OpenAsync(cancellationToken: _lifetime.Token);
+            using SqlCommand command = new(cmdText: ProjectStartDateQuery, connection: connection)
+            {
+                CommandTimeout = _configuration.CommandTimeoutSeconds
+            };
+            command.Parameters.Add(parameterName: "@ProjectName", sqlDbType: SqlDbType.NVarChar, size: 200).Value = project.ProjectName;
+            using SqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken: _lifetime.Token);
+            if (!await reader.ReadAsync(cancellationToken: _lifetime.Token))
+                throw new InvalidDataException(message: "The selected active project was not found. Test the connection to refresh the project list.");
+            int projectId = reader.GetInt32(i: 0);
+            DateTime projectStart = reader.GetDateTime(i: 1).Date;
+            if (await reader.ReadAsync(cancellationToken: _lifetime.Token))
+                throw new InvalidDataException(message: "More than one project matches the selected name. No dates were changed.");
+            if (_closing) return;
+            // A project/connection change during the asynchronous read must never apply stale data.
+            if (ActiveProject != project || _validatedConnectionString != connectionString) return;
+            ApplyProjectStartDate(expectedProjectId: project.ProjectId, returnedProjectId: projectId, start: projectStart);
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidDataException exception)
+        {
+            if (!_closing && ActiveProject == project && _validatedConnectionString == connectionString)
+                ProjectDatesStatus.Text = exception.Message;
+        }
+        catch (Exception)
+        {
+            if (!_closing && ActiveProject == project && _validatedConnectionString == connectionString)
+                ProjectDatesStatus.Text = "The project start date could not be read. Check the database connection and Project table permissions.";
+        }
+        finally
+        {
+            _updatingProjectDates = false;
+            if (_closing) { if (!_testing) _lifetime.Dispose(); }
+            else UpdateProjectDatesAvailability();
+        }
+    }
+
+    private void ApplyProjectStartDate(int expectedProjectId, int returnedProjectId, DateTime start)
+    {
+        if (expectedProjectId != returnedProjectId || ActiveProject?.ProjectId != expectedProjectId)
+        {
+            ProjectDatesStatus.Text = "The project identity has changed. No dates were updated; refresh the project list.";
+            return;
+        }
+        RefreshHistoricDates(utcNow: DateTime.UtcNow, resetSelection: false);
+        if (_latestCompleteDay is not DateTime latest || start.Date > latest)
+        {
+            ProjectDatesStatus.Text = "The project start date is not a completed project-local day. No dates were changed.";
+            return;
+        }
+        bool previousInitializing = _initializing;
+        _initializing = true;
+        try
+        {
+            StartDate.SelectedDate = start.Date;
+            ManualStartDate.SelectedDate = start.Date;
+        }
+        finally { _initializing = previousInitializing; }
+        ValidateDateRange();
+        ProjectDatesStatus.Text = $"Historic start dates updated to the project start date: {start:yyyy-MM-dd}.";
     }
     #endregion
 
@@ -382,6 +507,8 @@ public partial class MainWindow : Window
         HistoricDateStatus.Text = "Select a connected project with a valid time zone to set completed-day dates.";
         DateRangeStatus.Text = string.Empty;
         ManualDateRangeStatus.Text = string.Empty;
+        ProjectDatesStatus.Text = string.Empty;
+        UpdateProjectDatesAvailability();
     }
 
     private void RefreshHistoricDates(DateTime utcNow, bool resetSelection)
@@ -514,6 +641,7 @@ public partial class MainWindow : Window
 
     public sealed class ApplicationConfiguration
     {
+        public ReductionOptions Reduction { get; set; } = new();
         public string DatabaseName { get; set; } = "DBTrackGeometry";
         public string DefaultScheduledTime { get; set; } = "00:10";
         public int ConnectionTimeoutSeconds { get; set; } = 15;
@@ -531,3 +659,4 @@ public partial class MainWindow : Window
     #endregion
 }
 #endregion
+

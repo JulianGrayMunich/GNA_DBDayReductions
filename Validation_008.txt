@@ -1,0 +1,96 @@
+GNA_DBDayReductions Revision 008
+Verified 2026-09-22
+Release build: net10.0-windows, 0 warnings, 0 errors.
+87 existing offline WPF checks passed. Formatting-only change; SQL tests were not rerun.
+The seven requested grid/column combinations use F0. Remaining numeric formats remain F4.
+Calculation and database code unchanged. No production database touched. No images generated.
+Visual acceptance remains with the operator.
+
+PASS Header contains no revision
+PASS Exact dated copyright footer
+PASS Four tabs
+PASS Projects initially disabled
+PASS Test without project reports validation in comments
+PASS Cancel disabled while idle
+PASS Initial scheduler stopped state
+PASS Start locks both historic actions
+PASS Start Stop state toggled
+PASS Historic lockout explained in comments
+PASS Stop resets scheduler state
+PASS Date lookup disabled without validated project
+PASS Historic action buttons enabled on launch
+PASS Compute Now removed
+PASS Scheduler tab renamed
+PASS Minutes 01 through 59
+PASS No machine-time fallback before project validation
+PASS Time selectors work
+PASS Database catalog enforced
+PASS Date lookup enabled for validated project
+PASS Reduction locks scheduler and historic writes
+PASS Reduction locks project database and dates
+PASS Reduction enables cancellation and prevents duplicate run
+PASS Closing during reduction requests cancellation and waits for completion
+PASS Controls restored after reduction
+PASS Project start updates both historic ranges
+PASS End dates preserved by project date update
+PASS Mismatched database project ID rejected
+PASS Uncompleted project start day rejected without date changes
+PASS Asynchronous connection test completed within bound
+PASS SQL date lookup failure reported without throwing
+PASS Failed lookup preserves dates
+PASS StartDate defaults to project yesterday (Australia already next day)
+PASS StartDate blocks today
+PASS StartDate calendar capped
+PASS EndDate defaults to project yesterday (Australia already next day)
+PASS EndDate blocks today
+PASS EndDate calendar capped
+PASS ManualStartDate defaults to project yesterday (Australia already next day)
+PASS ManualStartDate blocks today
+PASS ManualStartDate calendar capped
+PASS ManualEndDate defaults to project yesterday (Australia already next day)
+PASS ManualEndDate blocks today
+PASS ManualEndDate calendar capped
+PASS Reversed delete range rejected
+PASS Delete valid range
+PASS Independent manual range validation
+PASS Independent date selectors
+PASS Invalid manual date clears safely
+PASS Midnight refresh preserves chosen historical range
+PASS DST boundary uses local calendar day
+PASS Asynchronous connection test completed within bound
+PASS ProjectStatus in lower comments group
+PASS SchedulePreferenceStatus in lower comments group
+PASS SettingsStatus in lower comments group
+PASS ConnectionStatus in lower comments group
+PASS DateRangeStatus in lower comments group
+PASS ManualDateRangeStatus in lower comments group
+PASS HistoricDateStatus in lower comments group
+PASS HistoricLockoutStatus in lower comments group
+PASS ProjectDatesStatus in lower comments group
+PASS Legacy minute 00 normalised to 01
+PASS Time preference restored
+PASS Saved project requires validation
+PASS Saved project restored after simulated successful query
+PASS Asynchronous connection test completed within bound
+PASS ContentRendered automatically attempted saved SQL connection
+PASS Startup failure clears stale project
+PASS Rendering does not repeat startup test
+PASS Manual retry still works
+PASS Missing project time zone disables all historic dates
+PASS EpochReadingsGrid supports read-only cell selection
+PASS EpochReadingsGrid copies column headings for Excel
+PASS ReductionPassesGrid supports read-only cell selection
+PASS ReductionPassesGrid copies column headings for Excel
+PASS DailyResultsGrid supports read-only cell selection
+PASS DailyResultsGrid copies column headings for Excel
+PASS No commit available without a pending review
+PASS Asynchronous connection test completed within bound
+PASS Review awaits explicit commit
+PASS Review displays table and raw data
+PASS Asynchronous connection test completed within bound
+PASS Commit releases one review and disables repeat clicks
+PASS Asynchronous connection test completed within bound
+PASS Asynchronous connection test completed within bound
+PASS Cancel releases waiting review without approving it
+PASS Review comments remain in lower tab Comments region
+PASS: 87 offline assertions. No live SQL success claimed.
