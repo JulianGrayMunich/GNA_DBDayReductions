@@ -1,5 +1,6 @@
 #region Imports
 using System.Data;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -11,22 +12,39 @@ public partial class MainWindow
 {
     private TaskCompletionSource<bool>? _reviewDecision;
 
+    private bool _reviewIsLastDay;
+
     private async Task ReviewTableAsync(ReductionReview review, CancellationToken cancellationToken)
     {
-        Task decision = await Dispatcher.InvokeAsync(callback: () =>
+        for (int index = 0; index < review.Days.Count; index++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ReviewTableName.Text = review.SourceTable + " → " + review.TargetTable;
-            EpochReadingsGrid.ItemsSource = review.EpochReadings.DefaultView;
-            ReductionPassesGrid.ItemsSource = review.Passes.DefaultView;
-            DailyResultsGrid.ItemsSource = review.DailyResults.DefaultView;
-            ReviewTabs.SelectedIndex = 0;
-            _reviewDecision = new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
-            CommitNextTableButton.IsEnabled = true;
-            AppendReductionStatus(message: $"Reviewing {review.SourceTable}: {review.EpochReadings.Rows.Count} readings, {review.DailyResults.Rows.Count} proposed daily rows. Select cells and copy to Excel with Ctrl+C. Commit and Next Table saves this table; Cancel stops without saving it.");
-            return _reviewDecision.Task;
-        });
-        await decision.WaitAsync(cancellationToken: cancellationToken);
+            ReductionDay day = review.Days[index];
+            bool lastDay = index == review.Days.Count - 1;
+            Task decision = await Dispatcher.InvokeAsync(callback: () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _reviewIsLastDay = lastDay;
+                ReviewTableName.Text = $"{day.LocalDate:yyyy-MM-dd}    {review.SourceTable} → {review.TargetTable}    ({index + 1}/{review.Days.Count})";
+                string date = day.LocalDate.ToString(format: "yyyy-MM-dd", provider: CultureInfo.InvariantCulture);
+                string start = day.StartUtc.ToString(format: "yyyy-MM-dd HH:mm:ss", provider: CultureInfo.InvariantCulture);
+                string end = day.EndUtc.ToString(format: "yyyy-MM-dd HH:mm:ss", provider: CultureInfo.InvariantCulture);
+                DataView raw = new(table: review.EpochReadings) { RowFilter = $"[UTCtime] >= #{start}# AND [UTCtime] < #{end}#" };
+                DataView passes = new(table: review.Passes) { RowFilter = $"[LocalDate] = #{date}#" };
+                DataView results = new(table: review.DailyResults) { RowFilter = $"[LocalDate] = #{date}#" };
+                EpochReadingsGrid.ItemsSource = raw;
+                ReductionPassesGrid.ItemsSource = passes;
+                DailyResultsGrid.ItemsSource = results;
+                ReviewTabs.SelectedIndex = 0;
+                _reviewDecision = new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+                CommitNextTableButton.Content = lastDay ? "Commit and Next Table" : "Next Day";
+                CommitNextTableButton.IsEnabled = true;
+                AppendReductionStatus(message: $"Reviewing {date}, {review.SourceTable}: {raw.Count} readings, {results.Count} proposed rows. "
+                    + (lastDay ? "Commit and Next Table saves all reviewed days for this table." : "Next Day advances the review without writing this table.")
+                    + " Cancel stops and retains previously committed tables.");
+                return _reviewDecision.Task;
+            });
+            await decision.WaitAsync(cancellationToken: cancellationToken);
+        }
     }
     private void CommitNextTableButton_Click(object sender, RoutedEventArgs e)
     {
@@ -34,12 +52,14 @@ public partial class MainWindow
         if (_reviewDecision.TrySetResult(result: true))
         {
             CommitNextTableButton.IsEnabled = false;
-            AppendReductionStatus(message: "Commit requested. Rechecking inputs and saving this table...");
+            AppendReductionStatus(message: _reviewIsLastDay
+                ? "Commit requested. Rechecking inputs and saving all reviewed days for this table..."
+                : "Advancing to the next day; this table has not been committed.");
         }
     }
     private void CopyReviewSelectionButton_Click(object sender, RoutedEventArgs e)
     {
-        DataGrid grid = ReviewTabs.SelectedIndex switch { 1 => ReductionPassesGrid, 2 => DailyResultsGrid, _ => EpochReadingsGrid };
+        DataGrid grid = ReviewTabs.SelectedIndex switch { 1 => ReductionPassesGrid, 2 => DailyResultsGrid, 3 => PerformanceFullGrid, 4 => PerformanceSummaryGrid, _ => EpochReadingsGrid };
         try
         {
             if (ApplicationCommands.Copy.CanExecute(parameter: null, target: grid))
@@ -62,7 +82,7 @@ public partial class MainWindow
             if (type == typeof(DateTime)) binding.StringFormat = e.PropertyName == "LocalDate" ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss";
             else if (type == typeof(decimal) || type == typeof(double) || type == typeof(float)
                 || type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte)) binding.StringFormat = "F4";
-            bool integerDisplay = sender == EpochReadingsGrid && e.PropertyName == "PointName_ID"
+            bool integerDisplay = sender == EpochReadingsGrid && e.PropertyName is "PointName_ID" or "ReadingCount"
                 || sender == ReductionPassesGrid && e.PropertyName is "PointName_ID" or "Pass" or "Count" or "CandidateCount"
                 || sender == DailyResultsGrid && e.PropertyName is "PointName_ID" or "NoOfObservations" or "RetainedCount" or "RejectedCount" or "AcceptedPasses";
             if (integerDisplay) binding.StringFormat = "F0";
@@ -72,15 +92,17 @@ public partial class MainWindow
             if (sender == ReductionPassesGrid)
             {
                 if (e.PropertyName is "Measurement" or "Pass") alignment = TextAlignment.Center;
-                if (e.PropertyName is "Mean" or "StandardDeviation" or "StandardError" or "CandidateCount"
+                if (e.PropertyName == "Mean") alignment = TextAlignment.Right;
+                if (e.PropertyName is "StandardDeviation" or "StandardError" or "CandidateCount"
                     or "CandidateMean" or "CandidateStandardDeviation" or "CandidateStandardError" or "TwiceCandidateSE"
-                    or "MeanDifference" or "Minimum" or "Maximum") alignment = TextAlignment.Right;
+                    or "MeanDifference" or "ComparisonTolerance" or "Minimum" or "Maximum") alignment = TextAlignment.Center;
             }
             if (sender == DailyResultsGrid)
             {
                 if (e.PropertyName is "NoOfObservations" or "RetainedCount" or "RejectedCount" or "AcceptedPasses" or "Performance")
                     alignment = TextAlignment.Center;
-                if (e.PropertyName is "dH" or "OriginalMean" or "MeanDifference") alignment = TextAlignment.Right;
+                if (e.PropertyName == "dH") alignment = TextAlignment.Right;
+                if (e.PropertyName is "StatisticsField" or "OriginalMean" or "MeanDifference") alignment = TextAlignment.Center;
             }
             if (alignment.HasValue)
             {
@@ -100,9 +122,13 @@ public partial class MainWindow
         CommitNextTableButton.IsEnabled = false;
         EpochReadingsGrid.ItemsSource = null; ReductionPassesGrid.ItemsSource = null; DailyResultsGrid.ItemsSource = null;
         ReviewTableName.Text = string.Empty;
+        CommitNextTableButton.Content = "Commit and Next Table";
     }
 }
 #endregion
+
+
+
 
 
 

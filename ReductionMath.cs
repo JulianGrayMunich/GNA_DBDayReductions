@@ -23,7 +23,7 @@ public static class ReductionMath
         if (values.Count == 0)
         {
             ReductionDiagnostics.Record(trace: trace, values: values, first: 0, count: 0, mean: null, pass: 0,
-                stage: "Final", decision: "No observations / Fail", tolerance: comparisonTolerance);
+                stage: "Final", decision: "Fail", tolerance: comparisonTolerance);
             return new(OriginalMean: null, DailyMean: null, OriginalCount: 0, RetainedCount: 0, AcceptedPasses: 0);
         }
         values.Sort();
@@ -104,4 +104,5 @@ public sealed record ReductionDay(DateTime LocalDate, DateTime StartUtc, DateTim
     }
 }
 #endregion
+
 

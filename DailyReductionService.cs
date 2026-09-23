@@ -19,6 +19,7 @@ public sealed class ReductionTableRule
 }
 public sealed record ReductionRequest(int ProjectId, string ProjectName, string TimeZoneId, DateTime StartDate, DateTime EndDate);
 public sealed record ReductionSummary(int Tables, int Rows, int Pass, int Fail);
+public sealed record ReductionProgress(int CompletedTables, int TotalTables);
 internal sealed record ReductionColumn(string Name, string Type, byte Precision, byte Scale, bool Nullable, bool Identity, bool Computed);
 internal sealed record ReductionPlan(string Schema, string Source, string Target, ReductionTableRule Rule,
     string[] Keys, List<ReductionColumn> Measurements, List<ReductionColumn> TargetColumns);
@@ -33,7 +34,6 @@ public sealed partial class DailyReductionService
     #region SQL Helpers
     private const string LockResource = "GNA_DBDayReductions:DailyReduction";
     private const string StatisticsTable = "[dbo].[DailyReductionStatistics]";
-    private const string AlgorithmVersion = "TrimExtremes2SE-v1";
     private readonly ReductionOptions _options;
     public DailyReductionService(ReductionOptions options)
     {
@@ -55,7 +55,8 @@ public sealed partial class DailyReductionService
     #endregion
     #region Run and Commit Boundaries
     public async Task<ReductionSummary> RunAsync(string connectionString, ReductionRequest request,
-        IProgress<string>? progress, CancellationToken cancellationToken, Func<ReductionReview, CancellationToken, Task>? review = null)
+        IProgress<string>? progress, CancellationToken cancellationToken, Func<ReductionReview, CancellationToken, Task>? review = null,
+        IProgress<ReductionProgress>? tableProgress = null)
     {
         TimeZoneInfo zone = TimeZoneInfo.FindSystemTimeZoneById(id: request.TimeZoneId);
         DateTime today = TimeZoneInfo.ConvertTimeFromUtc(dateTime: DateTime.UtcNow, destinationTimeZone: zone).Date;
@@ -75,12 +76,14 @@ public sealed partial class DailyReductionService
         }
         // Non-pooled connection disposal releases the session lock on every exit path.
         List<ReductionPlan> plans = await DiscoverAsync(connection: connection, cancellationToken: cancellationToken);
+        tableProgress?.Report(value: new(CompletedTables: 0, TotalTables: plans.Count));
         using (SqlTransaction preparation = connection.BeginTransaction(iso: IsolationLevel.Serializable))
         {
             await ValidateProjectAsync(connection: connection, transaction: preparation, request: request, cancellationToken: cancellationToken);
             foreach (ReductionPlan plan in plans)
                 await ValidateOwnershipAsync(connection: connection, transaction: preparation, plan: plan, projectId: request.ProjectId, cancellationToken: cancellationToken);
             await ExecuteAsync(connection: connection, transaction: preparation, sql: StatisticsDdl, cancellationToken: cancellationToken);
+            await ExecuteAsync(connection: connection, transaction: preparation, sql: StatisticsUpgradeDdl, cancellationToken: cancellationToken);
             foreach (ReductionPlan plan in plans)
                 await PrepareTargetAsync(connection: connection, transaction: preparation, plan: plan, cancellationToken: cancellationToken);
             preparation.Commit();
@@ -133,6 +136,7 @@ public sealed partial class DailyReductionService
                 if (snapshot is not null) VerifyReviewedReadings(expected: snapshot.Review.EpochReadings, actual: checkedReadings!);
                 transaction.Commit();
                 completed++; rowCount += tableRows; passes += tablePasses; failures += tableFailures;
+                tableProgress?.Report(value: new(CompletedTables: completed, TotalTables: plans.Count));
                 progress?.Report(value: $"Committed {plan.Source}: {tableRows} daily/statistics rows; Pass {tablePasses}, Fail {tableFailures}.");
             }
             catch
@@ -158,4 +162,7 @@ public sealed partial class DailyReductionService
     #endregion
 }
 #endregion
+
+
+
 

@@ -50,7 +50,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _calendarTimer = new() { Interval = TimeSpan.FromMinutes(value: 1) };
 
     public ProjectItem? ActiveProject { get; private set; }
-    public TimeOnly ScheduledLocalTime => new(hour: ScheduledHour.SelectedIndex, minute: ScheduledMinute.SelectedIndex + FirstSelectableMinute);
+    public TimeOnly ScheduledLocalTime => SchedulerClock.Time;
     #endregion
 
     #region Startup and Shutdown
@@ -58,6 +58,10 @@ public partial class MainWindow : Window
         path1: Environment.GetFolderPath(folder: Environment.SpecialFolder.LocalApplicationData),
         path2: "GNA", path3: "GNA_DBDayReductions", path4: SettingsFileName))
     {
+        _monitorScheduler = true;
+        _lastSchedulerRead = DateTime.UtcNow;
+        _schedulerTimer.Tick += SchedulerTimer_Tick;
+        _schedulerTimer.Start();
     }
 
     // An isolated path permits offline verification without changing the operator's preferences.
@@ -66,27 +70,19 @@ public partial class MainWindow : Window
         _settingsPath = settingsPath ?? throw new ArgumentNullException(paramName: nameof(settingsPath));
         InitializeComponent();
         string? startupWarning = LoadConfigurationAndSettings();
-        for (int hour = 0; hour < 24; hour++)
-        {
-            ScheduledHour.Items.Add(newItem: hour.ToString(format: "00", provider: CultureInfo.InvariantCulture));
-        }
-        for (int minute = FirstSelectableMinute; minute < 60; minute++)
-        {
-            ScheduledMinute.Items.Add(newItem: minute.ToString(format: "00", provider: CultureInfo.InvariantCulture));
-        }
         string timeText = _settings.ScheduledTime ?? _configuration.DefaultScheduledTime;
         if (!TimeOnly.TryParseExact(s: timeText, format: "HH:mm", provider: CultureInfo.InvariantCulture,
             style: DateTimeStyles.None, result: out TimeOnly time))
         {
             time = TimeOnly.ParseExact(s: _configuration.DefaultScheduledTime, format: "HH:mm", provider: CultureInfo.InvariantCulture);
         }
-        ScheduledHour.SelectedIndex = time.Hour;
-        // Earlier revisions allowed minute 00. Restore that value as the first permitted minute.
-        ScheduledMinute.SelectedIndex = Math.Max(val1: time.Minute, val2: FirstSelectableMinute) - FirstSelectableMinute;
+        SchedulerClock.Time = new(hour: time.Hour, minute: Math.Max(val1: time.Minute, val2: FirstSelectableMinute));
+        SynchronizeClockControls();
         SetHistoricDatesUnavailable();
         _calendarTimer.Tick += CalendarTimer_Tick;
         _calendarTimer.Start();
         ConnectionStringInput.Text = _savedConnectionString ?? string.Empty;
+        LogFolderInput.Text = _settings.LogFolder ?? string.Empty;
         _initializing = false;
         UpdateScheduleDescription();
         UpdateSchedulerState();
@@ -99,6 +95,7 @@ public partial class MainWindow : Window
     {
         if (_startupConnectionAttempted || _closing) return;
         _startupConnectionAttempted = true;
+        await RefreshSchedulerAsync(restoreSelection: true);
         if (string.IsNullOrWhiteSpace(value: ConnectionStringInput.Text))
         {
             ConnectionStatus.Text = "Enter a connection string on the Database tab, then click Test Connection.";
@@ -109,8 +106,11 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_schedulerChanging) { e.Cancel = true; return; }
+        if (_deleting) { e.Cancel = true; _deletionCancellation?.Cancel(); DeletionStatus.Text = "Cancellation requested; waiting for deletion to finish or roll back."; return; }
         if (_reducing) { e.Cancel = true; CancelReductionButton_Click(sender: this, e: new RoutedEventArgs()); return; }
         _closing = true;
+        _schedulerTimer.Stop();
         _calendarTimer.Stop();
         _calendarTimer.Tick -= CalendarTimer_Tick;
         _lifetime.Cancel();
@@ -150,6 +150,7 @@ public partial class MainWindow : Window
 
     private void InvalidateConnection()
     {
+        InvalidatePerformance();
         _validatedConnectionString = null;
         ActiveProject = null;
         SetHistoricDatesUnavailable();
@@ -238,6 +239,7 @@ public partial class MainWindow : Window
                 ConnectionStringInput.IsEnabled = true;
                 TestConnectionButton.IsEnabled = true;
                 UpdateProjectDatesAvailability();
+                if (_monitorScheduler) ApplySchedulerLocks();
             }
         }
     }
@@ -281,6 +283,7 @@ public partial class MainWindow : Window
     private void ProjectSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_initializing || _loadingProjects || _validatedConnectionString is null) return;
+        InvalidatePerformance();
         ActiveProject = ProjectSelector.SelectedItem as ProjectItem;
         if (ActiveProject is null) { UpdateProjectDatesAvailability(); return; }
         if (TryGetProjectTimeZone(timeZoneId: ActiveProject.TimeZoneId, timeZone: out TimeZoneInfo? zone))
@@ -315,28 +318,14 @@ public partial class MainWindow : Window
     #endregion
 
     #region Scheduler Interface State and Reduction Test
-    private void StartButton_Click(object sender, RoutedEventArgs e)
-    {
-        _schedulerActive = true;
-        UpdateSchedulerState();
-    }
-
-    private void StopButton_Click(object sender, RoutedEventArgs e)
-    {
-        _schedulerActive = false;
-        UpdateSchedulerState();
-    }
-
     private void UpdateSchedulerState()
     {
-        StartButton.IsEnabled = !_schedulerActive && !_reducing;
-        StopButton.IsEnabled = _schedulerActive && !_reducing;
-        DeleteButton.IsEnabled = !_schedulerActive && !_reducing;
-        ManualComputeButton.IsEnabled = !_schedulerActive && !_reducing;
-        TestReductionButton.IsEnabled = !_schedulerActive && !_reducing;
-        SchedulerStatus.Text = _schedulerActive
-            ? "Reduction software active (interface state only). No reduction is scheduled."
-            : "Reduction software stopped. Next scheduled reduction: not scheduled.";
+        StartButton.IsEnabled = !_schedulerActive && !_reducing && !_deleting && !_schedulerChanging;
+        StopButton.IsEnabled = _schedulerActive && !_reducing && !_deleting && !_schedulerChanging;
+        DeleteButton.IsEnabled = !_schedulerActive && !_reducing && !_deleting && !_schedulerChanging;
+        ManualComputeButton.IsEnabled = !_schedulerActive && !_reducing && !_deleting && !_schedulerChanging;
+        TestReductionButton.IsEnabled = !_schedulerActive && !_reducing && !_deleting && !_schedulerChanging;
+        SchedulerStatus.Text = SchedulerDescription();
         HistoricLockoutStatus.Text = _schedulerActive
             ? "Delete and Compute are disabled while the reduction software is active. Click Stop on Scheduler to enable them."
             : "Delete and Compute are disabled whenever the reduction software is active.";
@@ -348,7 +337,7 @@ public partial class MainWindow : Window
     #region Project Start Date Lookup
     private void UpdateProjectDatesAvailability()
     {
-        UpdateProjectDatesButton.IsEnabled = !_reducing && !_testing && !_updatingProjectDates && !_closing
+        UpdateProjectDatesButton.IsEnabled = !_reducing && !_deleting && !_testing && !_updatingProjectDates && !_closing
             && _validatedConnectionString is not null && ActiveProject is not null && _projectTimeZone is not null;
     }
 
@@ -426,21 +415,15 @@ public partial class MainWindow : Window
     #endregion
 
     #region Time and Inclusive Date Selection
-    private void ScheduledTime_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_initializing) return;
-        UpdateScheduleDescription();
-        SavePreferences();
-    }
-
     private void UpdateScheduleDescription()
     {
-        SchedulePreferenceStatus.Text = $"Selected time: {ScheduledLocalTime.ToString(format: "HH:mm", provider: CultureInfo.InvariantCulture)} (project-local, 24-hour clock). Scheduling and computation are not yet enabled.";
+        SchedulePreferenceStatus.Text = $"Selected time: {ScheduledLocalTime.ToString(format: "HH:mm", provider: CultureInfo.InvariantCulture)} (project-local). Drag either hand or enter HH:mm. Minutes: 01–59.";
     }
 
     private void HousekeepingDate_Changed(object? sender, SelectionChangedEventArgs e)
     {
         if (_initializing) return;
+        InvalidatePerformance();
         if (ValidateDateRange()) SavePreferences();
     }
 
@@ -653,10 +636,18 @@ public partial class MainWindow : Window
         public string? ProtectedConnectionString { get; set; }
         public int? ActiveProjectId { get; set; }
         public string? ScheduledTime { get; set; }
+        public string? LogFolder { get; set; }
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
     }
     #endregion
 }
 #endregion
+
+
+
+
+
+
+
 

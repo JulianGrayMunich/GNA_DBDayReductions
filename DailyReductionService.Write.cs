@@ -67,10 +67,10 @@ public sealed partial class DailyReductionService
     }
     private SqlCommand CreateStatisticsCommand(SqlConnection connection, SqlTransaction transaction)
     {
-        string[] keys = ["Project_ID", "SourceSchema", "SourceTable", "LocalDate", "EntityKey"];
-        string[] fields = ["PointName_ID", "PrismPair_ID", "Array_ID", "SensorID", "UTCtime", "TimeZoneId", "MeasurementField",
+        string[] keys = ["Project_ID", "SourceTable", "LocalDate", "EntityKey"];
+        string[] fields = ["PointName_ID", "PrismPair_ID", "Array_ID", "SensorID", "UTCtime", "MeasurementField",
             "OriginalObservationCount", "RetainedObservationCount", "RejectedObservationCount", "OriginalMean", "DailyMean",
-            "AcceptedTrimmingPasses", "Performance", "AlgorithmVersion", "ComparisonTolerance", "ComputedAtUTC"];
+            "AcceptedTrimmingPasses", "Performance", "ComparisonTolerance"];
         string predicate = string.Join(separator: " AND ", values: keys.Select(selector: k => Q(name: k) + "=@" + k));
         string assignments = string.Join(separator: ",", values: fields.Select(selector: k => Q(name: k) + "=@" + k));
         string[] all = [.. keys, .. fields];
@@ -85,13 +85,13 @@ public sealed partial class DailyReductionService
             {
                 "Project_ID" or "PointName_ID" or "PrismPair_ID" or "Array_ID" or "SensorID" or "OriginalObservationCount" or "RetainedObservationCount" or "RejectedObservationCount" or "AcceptedTrimmingPasses" => SqlDbType.Int,
                 "LocalDate" => SqlDbType.Date,
-                "UTCtime" or "ComputedAtUTC" => SqlDbType.DateTime2,
+                "UTCtime" => SqlDbType.DateTime2,
                 "OriginalMean" or "DailyMean" or "ComparisonTolerance" => SqlDbType.Decimal,
                 _ => SqlDbType.NVarChar
             };
             SqlParameter parameter = command.Parameters.Add(parameterName: "@" + name, sqlDbType: type);
             if (type == SqlDbType.Decimal) { parameter.Precision = 28; parameter.Scale = name == "ComparisonTolerance" ? (byte)16 : (byte)10; }
-            if (type == SqlDbType.NVarChar) parameter.Size = name switch { "TimeZoneId" => 200, "EntityKey" => 80, "Performance" => 4, "AlgorithmVersion" => 40, _ => 128 };
+            if (type == SqlDbType.NVarChar) parameter.Size = name switch { "EntityKey" => 80, "Performance" => 4, _ => 128 };
         }
         return command;
     }
@@ -99,14 +99,12 @@ public sealed partial class DailyReductionService
         ReductionDay day, ReductionResult result, CancellationToken cancellationToken)
     {
         command.Parameters["@Project_ID"].Value = request.ProjectId;
-        command.Parameters["@SourceSchema"].Value = plan.Schema;
         command.Parameters["@SourceTable"].Value = plan.Source;
         command.Parameters["@LocalDate"].Value = day.LocalDate;
         command.Parameters["@EntityKey"].Value = entity.Key;
         foreach (string name in new[] { "PointName_ID", "PrismPair_ID", "Array_ID", "SensorID" }) command.Parameters["@" + name].Value = DBNull.Value;
         for (int index = 0; index < plan.Keys.Length; index++) command.Parameters["@" + plan.Keys[index]].Value = entity.Ids[index];
         command.Parameters["@UTCtime"].Value = day.NoonUtc;
-        command.Parameters["@TimeZoneId"].Value = request.TimeZoneId;
         command.Parameters["@MeasurementField"].Value = plan.Measurements[0].Name;
         command.Parameters["@OriginalObservationCount"].Value = result.OriginalCount;
         command.Parameters["@RetainedObservationCount"].Value = result.RetainedCount;
@@ -115,10 +113,11 @@ public sealed partial class DailyReductionService
         command.Parameters["@DailyMean"].Value = (object?)result.DailyMean ?? DBNull.Value;
         command.Parameters["@AcceptedTrimmingPasses"].Value = result.AcceptedPasses;
         command.Parameters["@Performance"].Value = result.Performance;
-        command.Parameters["@AlgorithmVersion"].Value = AlgorithmVersion;
         command.Parameters["@ComparisonTolerance"].Value = _options.ComparisonTolerance;
-        command.Parameters["@ComputedAtUTC"].Value = DateTime.UtcNow;
         await command.ExecuteNonQueryAsync(cancellationToken: cancellationToken);
     }
 }
 #endregion
+
+
+

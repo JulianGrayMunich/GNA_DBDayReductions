@@ -1,13 +1,25 @@
 <Window x:Class="GNA_DBDayReductions.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GNA_DBDayReductions: Daily data reductions" Height="590" Width="960"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:GNA_DBDayReductions"
+        Title="GNA_DBDayReductions: Daily data reductions" Height="640" Width="960"
         Background="LightGray" FontFamily="Arial" FontSize="12"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Closing="Window_Closing" ContentRendered="Window_ContentRendered">
     <Window.Resources>
         <Style TargetType="TextBox"><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
         <Style TargetType="ComboBox"><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
         <Style x:Key="ActionButton" TargetType="Button"><Setter Property="Height" Value="30"/><Setter Property="MinWidth" Value="110"/></Style>
+        <Style x:Key="PeriodButton" TargetType="RadioButton">
+            <Setter Property="Width" Value="58"/><Setter Property="Height" Value="36"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+                <Border x:Name="PeriodBorder" BorderBrush="DarkGray" BorderThickness="1" Background="#EEEEEE" CornerRadius="2">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="PeriodBorder" Property="Background" Value="#BDD9F5"/></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="PeriodBorder" Property="BorderBrush" Value="SteelBlue"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
     </Window.Resources>
     <!-- #region MAIN WINDOW LAYOUT -->
     <Grid>
@@ -16,7 +28,7 @@
             <!-- #region SCHEDULER TAB -->
             <TabItem Header="Scheduler">
                 <Grid Margin="20">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="180"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="110"/></Grid.RowDefinitions>
                     <GroupBox Header="Project Selection" Padding="15">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/><ColumnDefinition Width="15"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
@@ -27,19 +39,22 @@
                         </Grid>
                     </GroupBox>
                     <GroupBox Grid.Row="2" Header="Daily Reduction Schedule" Padding="15">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="195"/><ColumnDefinition Width="65"/><ColumnDefinition Width="20"/><ColumnDefinition Width="65"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="Schedule (project local) time:" HorizontalAlignment="Right" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="ScheduledHour" Grid.Column="1" Height="28" SelectionChanged="ScheduledTime_SelectionChanged"/>
-                                <TextBlock Grid.Column="2" Text=":" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="ScheduledMinute" Grid.Column="3" Height="28" SelectionChanged="ScheduledTime_SelectionChanged"/>
-                            </Grid>
-                            <StackPanel Orientation="Horizontal" Margin="195,18,0,0">
-                                <Button Style="{StaticResource ActionButton}" x:Name="StartButton" Content="Start" IsEnabled="True" Click="StartButton_Click" Margin="0,0,12,0"/>
-                                <Button Style="{StaticResource ActionButton}" x:Name="StopButton" Content="Stop" IsEnabled="False" Click="StopButton_Click" Margin="0,0,12,0"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <local:ScheduleClock x:Name="SchedulerClock" HorizontalAlignment="Left" TimeChanged="ClockTime_Changed" LostMouseCapture="ClockCapture_Lost" AutomationProperties.Name="Schedule clock; use adjacent HH:mm field for keyboard entry"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Schedule (project local) time:" Margin="0,0,0,12"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox x:Name="ScheduleTimeInput" Text="00:01" Width="160" Height="36" FontSize="22" MaxLength="5" LostFocus="ScheduleTimeInput_LostFocus" PreviewKeyDown="ScheduleTimeInput_KeyDown" AutomationProperties.Name="Scheduled project-local time HH:mm"/>
+                                    <RadioButton x:Name="ScheduleAm" Content="AM" GroupName="SchedulePeriod" Style="{StaticResource PeriodButton}" Margin="12,0,0,0" Checked="ClockPeriod_Changed"/>
+                                    <RadioButton x:Name="SchedulePm" Content="PM" GroupName="SchedulePeriod" Style="{StaticResource PeriodButton}" Checked="ClockPeriod_Changed"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+                                    <Button Style="{StaticResource ActionButton}" x:Name="StartButton" Content="Start" Click="StartButton_Click" Margin="0,0,12,0"/>
+                                    <Button Style="{StaticResource ActionButton}" x:Name="StopButton" Content="Stop" IsEnabled="False" Click="StopButton_Click"/>
+                                </StackPanel>
                             </StackPanel>
-                        </StackPanel>
+                        </Grid>
                     </GroupBox>
                     <!-- #region SCHEDULER COMMENTS -->
                     <GroupBox Grid.Row="4" Header="Comments" Padding="12">
@@ -60,7 +75,7 @@
             <!-- #region DATABASE TAB -->
             <TabItem Header="Database">
                 <Grid Margin="20">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="180"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="180"/></Grid.RowDefinitions>
                     <GroupBox Header="Database Connection" Padding="15">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="10"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -70,10 +85,19 @@
                             <Button Style="{StaticResource ActionButton}" x:Name="TestConnectionButton" Grid.Column="3" Content="Test Connection" Click="TestConnectionButton_Click"/>
                         </Grid>
                     </GroupBox>
+                    <GroupBox Grid.Row="2" Header="System Log File" Padding="15">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/><ColumnDefinition Width="15"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Log folder:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="LogFolderInput" Grid.Column="1" IsReadOnly="True" Height="30"/>
+                            <Button x:Name="LogFolderButton" Grid.Column="3" Content="Select Folder" Style="{StaticResource ActionButton}" Click="LogFolderButton_Click"/>
+                        </Grid>
+                    </GroupBox>
                     <!-- #region DATABASE COMMENTS -->
-                    <GroupBox Grid.Row="2" Header="Comments" Padding="12">
+                    <GroupBox Grid.Row="4" Header="Comments" Padding="12">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
+                                <TextBlock x:Name="LogFolderStatus" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <TextBlock x:Name="ConnectionStatus" Text="Connection not tested." TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding Text, ElementName=SettingsStatus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
@@ -86,7 +110,7 @@
             <!-- #region HISTORIC DATA TAB -->
             <TabItem Header="Historic Data">
                 <Grid Margin="20">
-                    <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="12"/><RowDefinition Height="Auto"/><RowDefinition Height="12"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="145"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="12"/><RowDefinition Height="Auto"/><RowDefinition Height="12"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="117"/></Grid.RowDefinitions>
                     <Button x:Name="UpdateProjectDatesButton" Style="{StaticResource ActionButton}" Content="Update project dates" Width="155" HorizontalAlignment="Left" IsEnabled="False" Click="UpdateProjectDatesButton_Click"/>
                     <GroupBox Grid.Row="2" Header="Delete Data" Padding="15">
                         <StackPanel>
@@ -97,7 +121,7 @@
                                 <TextBlock Grid.Column="2" Text="End date:" HorizontalAlignment="Right" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                 <DatePicker x:Name="EndDate" Grid.Column="3" Height="28" SelectedDateFormat="Short" SelectedDateChanged="HousekeepingDate_Changed" DateValidationError="HousekeepingDate_ValidationError"/>
                             </Grid>
-                            <Button Style="{StaticResource ActionButton}" x:Name="DeleteButton" Content="Delete" IsEnabled="True" HorizontalAlignment="Left" Margin="140,18,0,0"/>
+                            <Button Style="{StaticResource ActionButton}" x:Name="DeleteButton" Content="Delete" Click="DeleteButton_Click" IsEnabled="True" HorizontalAlignment="Left" Margin="140,18,0,0"/>
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Grid.Row="4" Header="Manual Data Reductions" Padding="15">
@@ -109,7 +133,8 @@
                                 <TextBlock Grid.Column="2" Text="End date:" HorizontalAlignment="Right" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                 <DatePicker x:Name="ManualEndDate" Grid.Column="3" Height="28" SelectedDateFormat="Short" SelectedDateChanged="HousekeepingDate_Changed" DateValidationError="HousekeepingDate_ValidationError"/>
                             </Grid>
-                            <Button Style="{StaticResource ActionButton}" x:Name="ManualComputeButton" Content="Compute" IsEnabled="True" HorizontalAlignment="Left" Margin="140,18,0,0"/>
+                            <ProgressBar x:Name="ManualReductionProgress" Height="18" Margin="140,12,0,0" Minimum="0" Maximum="1" Value="0" ToolTip="No computation running" AutomationProperties.Name="Manual reduction table progress"/>
+                            <Button Style="{StaticResource ActionButton}" x:Name="ManualComputeButton" Click="ManualComputeButton_Click" Content="Compute" IsEnabled="True" HorizontalAlignment="Left" Margin="140,18,0,0"/>
                         </StackPanel>
                     </GroupBox>
                     <!-- #region HISTORIC DATA COMMENTS -->
@@ -117,6 +142,8 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <TextBlock x:Name="HistoricLockoutStatus" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="ManualReductionStatus" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="DeletionStatus" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 <TextBlock x:Name="ProjectDatesStatus" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 <TextBlock x:Name="HistoricDateStatus" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 <TextBlock x:Name="DateRangeStatus" Margin="0,8,0,0" TextWrapping="Wrap"/>
@@ -152,11 +179,43 @@
                         <Button x:Name="CancelReductionButton" Style="{StaticResource ActionButton}" Content="Cancel" Width="110" IsEnabled="False" Click="CancelReductionButton_Click" Margin="0,0,10,0"/>
                         <Button x:Name="CopyReviewSelectionButton" Style="{StaticResource ActionButton}" Content="Copy Selected" Width="120" Click="CopyReviewSelectionButton_Click"/>
                     </StackPanel>
-                    <TextBlock x:Name="ReviewTableName" Grid.Row="1" Margin="0,8,0,6" FontWeight="Bold"/>
-                    <TabControl x:Name="ReviewTabs" Grid.Row="2" Margin="0,0,0,8">
+                    <StackPanel Grid.Row="1" Margin="0,6,0,6"><TextBlock x:Name="ReductionPeriod" Margin="0,0,0,4"/><TextBlock x:Name="ReviewTableName" FontWeight="Bold"/></StackPanel>
+                    <TabControl x:Name="ReviewTabs" Grid.Row="2" Margin="0,0,0,8" SelectionChanged="ReviewTabs_SelectionChanged">
                         <TabItem Header="Epoch readings"><DataGrid x:Name="EpochReadingsGrid" Style="{StaticResource ReviewGrid}" AutoGeneratingColumn="ReviewGrid_AutoGeneratingColumn"/></TabItem>
                         <TabItem Header="Reduction passes"><DataGrid x:Name="ReductionPassesGrid" Style="{StaticResource ReviewGrid}" AutoGeneratingColumn="ReviewGrid_AutoGeneratingColumn"/></TabItem>
                         <TabItem Header="Daily results"><DataGrid x:Name="DailyResultsGrid" Style="{StaticResource ReviewGrid}" AutoGeneratingColumn="ReviewGrid_AutoGeneratingColumn"/></TabItem>
+                        <TabItem Header="Perfmance Full">
+                            <Grid Margin="6">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="RefreshPerformanceFullButton" Content="Refresh" Width="100" Height="26" Click="RefreshPerformanceButton_Click"/>
+                                    <Button x:Name="ViewPerformanceImageButton" Content="View Image" Width="100" Height="26" Margin="8,0,0,0" IsEnabled="False" Click="ViewPerformanceImageButton_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="PerformanceFullHeading" Grid.Row="1" Margin="0,6" FontWeight="Bold"/>
+                                <TextBlock x:Name="PerformanceFullEmpty" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                                <DataGrid x:Name="PerformanceFullGrid" Grid.Row="2" Style="{StaticResource ReviewGrid}" AutoGenerateColumns="False" HeadersVisibility="Column" MinColumnWidth="20" FontSize="10">
+                                    <DataGrid.ColumnHeaderStyle><Style TargetType="DataGridColumnHeader"><Setter Property="Padding" Value="0"/><Setter Property="HorizontalContentAlignment" Value="Center"/></Style></DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.GroupStyle><GroupStyle><GroupStyle.HeaderTemplate><DataTemplate><TextBlock Text="{Binding Name}" FontWeight="Bold" Margin="3"/></DataTemplate></GroupStyle.HeaderTemplate></GroupStyle></DataGrid.GroupStyle>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="Performance Summary">
+                            <Grid Margin="6">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <Button x:Name="RefreshPerformanceSummaryButton" Content="Refresh" Width="100" Height="26" HorizontalAlignment="Left" Click="RefreshPerformanceButton_Click"/>
+                                <TextBlock x:Name="PerformanceSummaryHeading" Grid.Row="1" Margin="0,6" FontWeight="Bold"/>
+                                <TextBlock x:Name="PerformanceSummaryEmpty" Grid.Row="2" Margin="0,0,0,6"/>
+                                <DataGrid x:Name="PerformanceSummaryGrid" Grid.Row="3" Style="{StaticResource ReviewGrid}" AutoGenerateColumns="False">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Sensor type" Binding="{Binding SensorType}" Width="150"/>
+                                        <DataGridTextColumn Header="Sensor name" Binding="{Binding SensorName}" Width="*"/>
+                                        <DataGridTextColumn Header="Pass days" Binding="{Binding PassDays, StringFormat=F0}" Width="80"/>
+                                        <DataGridTextColumn Header="Fail days" Binding="{Binding FailDays, StringFormat=F0}" Width="80"/>
+                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
                     </TabControl>
                     <GroupBox Grid.Row="3" Header="Comments" Padding="8">
                         <TextBox x:Name="TestStatus" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" Text="Select the project and the Manual Data Reductions date range, then click Test."/>
@@ -167,12 +226,22 @@
         </TabControl>
         <Border Grid.Row="1" BorderBrush="DarkGray" BorderThickness="0,1,0,0" Padding="10,0">
             <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" x:Name="RevisionFooter" Text="© GNA Software 20260922 Revision 009" Margin="15,0,0,0"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" x:Name="RevisionFooter" Text="© GNA Software 20260923 Revision 017" Margin="15,0,0,0"/>
             </DockPanel>
         </Border>
     </Grid>
     <!-- #endregion -->
 </Window>
+
+
+
+
+
+
+
+
+
+
 
 
 

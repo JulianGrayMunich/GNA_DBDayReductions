@@ -33,6 +33,7 @@ public sealed partial class DailyReductionService
         List<ReductionPlan> plans = new();
         foreach ((string schema, string source) in names)
         {
+            if (schema != "dbo") throw new InvalidOperationException(message: $"Epochs tables must use dbo: {schema}.{source}. No reductions have been written.");
             if (!_options.Tables.TryGetValue(key: schema + "." + source, value: out ReductionTableRule? rule))
                 throw new InvalidOperationException(message: $"No project-ownership rule is configured for {schema}.{source}. No reductions have been written.");
             string[] keys = rule.Identity switch
@@ -113,15 +114,15 @@ public sealed partial class DailyReductionService
     private const string StatisticsDdl = """
         IF OBJECT_ID(N'dbo.DailyReductionStatistics',N'U') IS NULL
         CREATE TABLE dbo.DailyReductionStatistics (
-          Project_ID int NOT NULL, SourceSchema nvarchar(128) NOT NULL, SourceTable nvarchar(128) NOT NULL,
+          Project_ID int NOT NULL, SourceTable nvarchar(128) NOT NULL,
           LocalDate date NOT NULL, EntityKey nvarchar(80) NOT NULL,
           PointName_ID int NULL, PrismPair_ID int NULL, Array_ID int NULL, SensorID int NULL,
-          UTCtime datetime2(0) NOT NULL, TimeZoneId nvarchar(200) NOT NULL, MeasurementField nvarchar(128) NOT NULL,
+          UTCtime datetime2(0) NOT NULL, MeasurementField nvarchar(128) NOT NULL,
           OriginalObservationCount int NOT NULL, RetainedObservationCount int NOT NULL, RejectedObservationCount int NOT NULL,
           OriginalMean decimal(28,10) NULL, DailyMean decimal(28,10) NULL, AcceptedTrimmingPasses int NOT NULL,
           Performance nvarchar(4) NOT NULL CHECK (Performance IN (N'Pass',N'Fail')),
-          AlgorithmVersion nvarchar(40) NOT NULL, ComparisonTolerance decimal(28,16) NOT NULL, ComputedAtUTC datetime2(7) NOT NULL,
-          PRIMARY KEY (Project_ID,SourceSchema,SourceTable,LocalDate,EntityKey),
+          ComparisonTolerance decimal(28,16) NOT NULL,
+          PRIMARY KEY (Project_ID,SourceTable,LocalDate,EntityKey),
           FOREIGN KEY (Project_ID) REFERENCES dbo.Project(Project_ID),
           CHECK (OriginalObservationCount=RetainedObservationCount+RejectedObservationCount),
           CHECK ((OriginalObservationCount=0 AND Performance=N'Fail') OR (OriginalObservationCount>0 AND Performance=N'Pass'))
@@ -129,3 +130,6 @@ public sealed partial class DailyReductionService
         """;
 }
 #endregion
+
+
+

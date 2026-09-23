@@ -1,0 +1,9 @@
+GNA_DBDayReductions Revision 017 — 2026-09-23
+Release build: succeeded, 0 warnings, 0 errors (.NET 10 WPF).
+Offline WPF checks: 133 passed, including Scheduler Start validation, active countdown text, configuration/write lockout, running-after-Stop reporting and log-folder layout.
+Arithmetic/calendar/SQL checks: 126 passed against a disposable local SQL Express database, removed afterward. Includes successful unattended execution of the previous project-local day and duplicate-free Daily/statistics updates.
+Scheduler/log/time-zone checks: 26 passed. Includes project-local next run independent of host zone; standard/daylight UTC slots; correct dispatch gating; no late catch-up; ambiguous/nonexistent times; encrypted connection roundtrip; indefinite daily definitions; highest privilege/password logon; manual trigger; 15-minute execution limit; no overlapping instances; append-only logs; failure reason and exit status; actual executable headless launch; read-only absent-task query.
+Windows Task Scheduler parsed both definitions and accepted both through TASK_VALIDATE_ONLY. No tasks registered or modified by these checks.
+No production database accessed or modified. No screenshots/new mockup images generated.
+Deployment acceptance still required: actual password-based task registration, signed-out trigger execution, production SQL/log permissions, reopening UI against that registered task and the real 15-minute cutoff. Application cannot write a log entry if Windows cannot start it or power is lost; task Last Run Result/history remains the external diagnostic.
+Archive validation: Downloads ZIP reopened and extracted; every file compared against source by SHA-256; Revision 017 footer, CLI modes and scheduler/log UI source verified; temporary extraction removed before delivery.

@@ -1,0 +1,7 @@
+GNA_DBDayReductions Revision 016 — 2026-09-23
+Release build: succeeded, 0 warnings, 0 errors (.NET 10 WPF).
+Offline WPF checks: 128 passed. Includes clock/digital/AM-PM synchronization, midnight/noon, hand position calculations, minute restrictions, invalid text rejection, saved preferences and layout bounds without screenshots.
+Manual success path inspected: progress resets to zero and success message appears in Historic Comments. Delete success path explicitly reports successful completion with counts and dates. Historic Comments height reduced by 28 logical units.
+All DailyReductionService files and ReductionMath.cs match Revision 015 exactly by SHA-256. SQL suite was not rerun for these interface-only changes; Revision 015 passed 124 arithmetic/calendar/SQL checks in a disposable database.
+No production database accessed or modified. Julian's visual and mouse-interaction acceptance remain pending. No new mockup or screenshot files generated during testing.
+Archive validation: Downloads ZIP reopened and extracted; all packaged files compared to source by SHA-256; Revision 016 footer and new clock source verified; temporary extraction removed before delivery.

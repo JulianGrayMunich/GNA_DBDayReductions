@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 #endregion
 namespace GNA_DBDayReductions;
 #region Table Review Models
-public sealed record ReductionReview(string SourceTable, string TargetTable, DataTable EpochReadings, DataTable Passes, DataTable DailyResults);
+public sealed record ReductionReview(string SourceTable, string TargetTable, DataTable EpochReadings, DataTable Passes, DataTable DailyResults, IReadOnlyList<ReductionDay> Days);
 internal sealed record ReviewSnapshot(ReductionReview Review, List<ReductionEntity> Entities);
 #endregion
 #region Table Review Preparation
@@ -81,7 +81,7 @@ public sealed partial class DailyReductionService
         }
         cancellationToken.ThrowIfCancellationRequested(); transaction.Commit();
         return new(Review: new(SourceTable: plan.Schema + "." + plan.Source, TargetTable: plan.Schema + "." + plan.Target,
-            EpochReadings: raw, Passes: passes, DailyResults: final), Entities: entities);
+            EpochReadings: raw, Passes: passes, DailyResults: final, Days: days.AsReadOnly()), Entities: entities);
     }
     private static void VerifyReviewedEntities(List<ReductionEntity> expected, List<ReductionEntity> actual)
     {
@@ -101,4 +101,5 @@ public sealed partial class DailyReductionService
     private static InvalidOperationException ChangedReview() => new(message: "The registrations or epoch readings changed during review. This table was not committed. Run Test again to review the updated data.");
 }
 #endregion
+
 
